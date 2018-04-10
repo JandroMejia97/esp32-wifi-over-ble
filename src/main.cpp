@@ -1,6 +1,8 @@
 // Default Arduino includes
 #include <Arduino.h>
 #include <WiFi.h>
+#include <nvs.h>
+#include <nvs_flash.h>
 
 // Includes for JSON object handling
 // Requires ArduinoJson library
@@ -63,6 +65,12 @@ BLEService *pService;
 /** BLE Server */
 BLEServer *pServer;
 
+/** Buffer for JSON string */
+// MAx size is 51 bytes for frame: 
+// {"ssidPrim":"","pwPrim":"","ssidSec":"","pwSec":""}
+// + 4 x 32 bytes for 2 SSID's and 2 passwords
+StaticJsonBuffer<200> jsonBuffer;
+
 /**
  * MyServerCallbacks
  * Callbacks for client connection and disconnection
@@ -91,10 +99,16 @@ class MyCallbackHandler: public BLECharacteristicCallbacks {
 		}
 		Serial.println("Received over BLE: " + String((char *)&value[0]));
 
-		/** Buffer for incoming JSON string */
-		DynamicJsonBuffer jsonInBuffer;
+		// Decode data
+		int keyIndex = 0;
+		for (int index = 0; index < value.length(); index ++) {
+			value[index] = (char) value[index] ^ (char) apName[keyIndex];
+			keyIndex++;
+			if (keyIndex >= strlen(apName)) keyIndex = 0;
+		}
+
 		/** Json object for incoming data */
-		JsonObject& jsonIn = jsonInBuffer.parseObject((char *)&value[0]);
+		JsonObject& jsonIn = jsonBuffer.parseObject((char *)&value[0]);
 		if (jsonIn.success()) {
 			if (jsonIn.containsKey("ssidPrim") &&
 					jsonIn.containsKey("pwPrim") && 
@@ -127,27 +141,49 @@ class MyCallbackHandler: public BLECharacteristicCallbacks {
 				preferences.end();
 				connStatusChanged = true;
 				hasCredentials = false;
-				return;
+				ssidPrim = "";
+				pwPrim = "";
+				ssidSec = "";
+				pwSec = "";
+
+				int err;
+				err=nvs_flash_init();
+				Serial.println("nvs_flash_init: " + err);
+				err=nvs_flash_erase();
+				Serial.println("nvs_flash_erase: " + err);
+			} else if (jsonIn.containsKey("reset")) {
+				WiFi.disconnect();
+				esp_restart();
 			}
 		} else {
 			Serial.println("Received invalid JSON");
 		}
+		jsonBuffer.clear();
 	};
 
 	void onRead(BLECharacteristic *pCharacteristic) {
 		Serial.println("BLE onRead request");
 		String wifiCredentials;
-	 	/** Buffer for outgoing JSON string */
-		DynamicJsonBuffer jsonOutBuffer;
+
 		/** Json object for outgoing data */
-		JsonObject& jsonOut = jsonOutBuffer.createObject();
+		JsonObject& jsonOut = jsonBuffer.createObject();
 		jsonOut["ssidPrim"] = ssidPrim;
 		jsonOut["pwPrim"] = pwPrim;
 		jsonOut["ssidSec"] = ssidSec;
 		jsonOut["pwSec"] = pwSec;
 		// Convert JSON object into a string
 		jsonOut.printTo(wifiCredentials);
+
+		// encode the data
+		int keyIndex = 0;
+		Serial.println("Stored settings: " + wifiCredentials);
+		for (int index = 0; index < wifiCredentials.length(); index ++) {
+			wifiCredentials[index] = (char) wifiCredentials[index] ^ (char) apName[keyIndex];
+			keyIndex++;
+			if (keyIndex >= strlen(apName)) keyIndex = 0;
+		}
 		pCharacteristicWiFi->setValue((uint8_t*)&wifiCredentials[0],wifiCredentials.length());
+		jsonBuffer.clear();
 	}
 };
 
@@ -178,19 +214,6 @@ void initBLE() {
 		BLECharacteristic::PROPERTY_WRITE
 	);
 	pCharacteristicWiFi->setCallbacks(new MyCallbackHandler());
-	// Create initial characteristic value
-	String wifiCredentials;
-	/** Buffer for outgoing JSON string */
-	DynamicJsonBuffer jsonOutBuffer;
-	/** Json object for outgoing data */
-	JsonObject& jsonOut = jsonOutBuffer.createObject();
-	jsonOut["ssidPrim"] = ssidPrim;
-	jsonOut["pwPrim"] = pwPrim;
-	jsonOut["ssidSec"] = ssidSec;
-	jsonOut["pwSec"] = pwSec;
-	// Convert JSON object into a string
-	jsonOut.printTo(wifiCredentials);
-	pCharacteristicWiFi->setValue((uint8_t*)&wifiCredentials[0],wifiCredentials.length());
 
 	// Start the service
 	pService->start();
