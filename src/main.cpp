@@ -15,7 +15,7 @@
 #include <BLEServer.h>
 #include <BLEDevice.h>
 #include <BLEAdvertising.h>
-#include <preferences.h>
+#include <Preferences.h>
 
 /** Build time */
 const char compileDate[] = __DATE__ " " __TIME__;
