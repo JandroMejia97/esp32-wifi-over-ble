@@ -1,3 +1,5 @@
+# This project is outdated and no longer supported. Please check out my new code on [Github](https://github.com/beegee-tokyo/RAK4631-LoRa-BLE-Config)
+
 # ESP32 WiFi credential setup over BLE
 Setup your ESP32 WiFi credentials over BLE from an Android phone or tablet.
 Sometimes you do not want to have your WiFi credentials in the source code, specially if it is open source and maybe accessible as a repository on Github or Bitbucket.
